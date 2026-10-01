@@ -1,0 +1,126 @@
+// Personal Task Journal — database schema
+// SQLite is used locally as a stand-in for Supabase. Every query is scoped by
+// the authenticated user's id (RLS-equivalent enforced in the API layer), so
+// each user only ever sees their own data.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  provider      String    @default("credentials") // credentials | google
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions          Session[]
+  categories        Category[]
+  tasks             Task[]
+  subtasks          Subtask[]
+  recurringTemplates RecurringTemplate[]
+  settings          Settings?
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Settings {
+  userId         String  @id
+  theme          String  @default("system") // light | dark | system
+  weekStartsOn   Int     @default(1) // 0 Sunday .. 1 Monday
+  timezone       String  @default("Africa/Nairobi")
+  onboardingDone Boolean @default(false)
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  recurringTemplates RecurringTemplate[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model Task {
+  id                 String    @id @default(cuid())
+  userId             String
+  title              String
+  description        String?
+  categoryId         String?
+  priority           String    @default("medium") // low | medium | high
+  dueDate            String    // YYYY-MM-DD (date only, no clock time)
+  status             String    @default("pending") // pending | completed | skipped
+  completedAt        DateTime?
+  skipReason         String?
+  skipLoggedAt       DateTime?
+  recurrenceRule     String?   // daily | weekdays | weekly | monthly (one-off if null)
+  recurrenceWeekdays String?   // comma-separated 0-6 (Sun..Sat) for weekdays rule
+  parentRecurringId  String?   // recurring template id this occurrence came from
+  sortOrder          Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subtasks  Subtask[]
+
+  @@index([userId, dueDate])
+  @@index([userId, status])
+  @@index([parentRecurringId])
+}
+
+model Subtask {
+  id        String    @id @default(cuid())
+  taskId    String
+  userId    String
+  title     String
+  isDone    Boolean   @default(false)
+  doneAt    DateTime?
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model RecurringTemplate {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  categoryId  String?
+  priority    String   @default("medium")
+  rule        String   // daily | weekdays | weekly | monthly
+  weekdays    String?  // comma-separated 0-6 (for weekdays rule selection)
+  startDate   String   // YYYY-MM-DD
+  endDate     String?  // YYYY-MM-DD
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isActive])
+}
