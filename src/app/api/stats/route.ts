@@ -1,234 +1,155 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { errorResponse, requireUser } from '@/lib/auth'
-import { addDays, addMonths, parseDateOnly, parseDateOnlyStr, startOfMonth, startOfWeek, todayDateOnly } from '@/lib/date'
-import { SKIP_REASON_CHIPS } from '@/lib/types'
+import { occursOn, parseDateOnly } from '@/lib/date'
+import { ensureMarksAndAutoClose } from '@/app/api/marks/route'
+import { serializeMark } from '@/lib/serialize'
 
-type RangeKey = 'today' | 'week' | 'month' | 'last30' | 'custom'
-
-function getRange(key: RangeKey, customFrom?: string, customTo?: string, weekStartsOn: 0 | 1 = 1) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  let from: Date
-  let to: Date = new Date(today)
-  switch (key) {
-    case 'today':
-      from = new Date(today)
-      break
-    case 'week':
-      from = startOfWeek(today, weekStartsOn)
-      break
-    case 'month':
-      from = startOfMonth(today)
-      break
-    case 'last30':
-      from = addDays(today, -29)
-      break
-    case 'custom':
-      from = customFrom ? parseDateOnly(customFrom) : addDays(today, -6)
-      to = customTo ? parseDateOnly(customTo) : new Date(today)
-      break
-  }
-  return { from, to }
-}
-
-function prevRange(from: Date, to: Date) {
-  const spanDays = Math.round((to.getTime() - from.getTime()) / 86400000) + 1
-  const prevTo = addDays(from, -1)
-  const prevFrom = addDays(prevTo, -(spanDays - 1))
-  return { from: prevFrom, to: prevTo }
-}
-
+// GET /api/stats?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Returns dashboard overview + per-task progress + recent not-done reasons.
 export async function GET(req: NextRequest) {
   try {
     const user = await requireUser()
     const url = req.nextUrl
-    const rangeKey = (url.searchParams.get('range') || 'last30') as RangeKey
-    const settings = await db.settings.findUnique({ where: { userId: user.id } })
-    const weekStartsOn = (settings?.weekStartsOn ?? 1) as 0 | 1
-    const from = url.searchParams.get('from') || undefined
-    const to = url.searchParams.get('to') || undefined
-    const catParam = url.searchParams.get('categories')
-    const categories = catParam ? catParam.split(',').filter(Boolean) : undefined
+    const from = url.searchParams.get('from')
+    const to = url.searchParams.get('to')
+    if (!from || !to) return NextResponse.json({ error: 'from and to required' }, { status: 400 })
 
-    const { from: rf, to: rt } = getRange(rangeKey, from, to, weekStartsOn)
-    const { from: pf, to: pt } = prevRange(rf, rt)
+    // Ensure marks exist and auto-close overdue ones first.
+    await ensureMarksAndAutoClose(user.id, from, to)
 
-    const catFilter = categories ? { categoryId: { in: categories } } : {}
-
-    // Range + previous range tasks
-    const rangeTasks = await db.task.findMany({
-      where: { userId: user.id, dueDate: { gte: parseDateOnlyStr(rf), lte: parseDateOnlyStr(rt) }, ...catFilter },
+    const tasks = await db.task.findMany({
+      where: { userId: user.id },
       include: { category: true, subtasks: true },
-    })
-    const prevTasks = await db.task.findMany({
-      where: { userId: user.id, dueDate: { gte: parseDateOnlyStr(pf), lte: parseDateOnlyStr(pt) }, ...catFilter },
-      include: { subtasks: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     })
 
-    // 365-day window for streaks
-    const heatFrom = addDays(new Date(), -364)
-    const allYearTasks = await db.task.findMany({
-      where: { userId: user.id, dueDate: { gte: parseDateOnlyStr(heatFrom) }, ...catFilter },
-      select: { dueDate: true, status: true },
-    })
+    const fromD = parseDateOnly(from)
+    const toD = parseDateOnly(to)
 
-    const completed = rangeTasks.filter((t) => t.status === 'completed').length
-    const skipped = rangeTasks.filter((t) => t.status === 'skipped').length
-    const total = rangeTasks.length
-    const completionRate = total ? Math.round((completed / total) * 100) : 0
-    const subtasksCompleted = rangeTasks.reduce(
-      (acc, t) => acc + t.subtasks.filter((s) => s.isDone).length,
-      0,
-    )
-
-    const prevCompleted = prevTasks.filter((t) => t.status === 'completed').length
-    const prevTotal = prevTasks.length
-    const prevCompletionRate = prevTotal ? Math.round((prevCompleted / prevTotal) * 100) : 0
-    const prevSkipped = prevTasks.filter((t) => t.status === 'skipped').length
-    const prevSubtasks = prevTasks.reduce((acc, t) => acc + t.subtasks.filter((s) => s.isDone).length, 0)
-
-    // streaks
-    const { currentStreak, longestStreak } = computeStreaks(allYearTasks)
-
-    // daily series
-    const dayMap = new Map<string, { completed: number; skipped: number; pending: number }>()
-    const cursor = new Date(rf)
-    while (cursor <= rt) {
-      dayMap.set(parseDateOnlyStr(cursor), { completed: 0, skipped: 0, pending: 0 })
-      cursor.setDate(cursor.getDate() + 1)
+    type DayDot = { date: string; status: string; auto: boolean; reason: string | null }
+    type TaskProgress = {
+      task: (typeof tasks)[number]
+      days: DayDot[]
+      doneCount: number
+      notDoneCount: number
+      pendingCount: number
+      totalDays: number
+      completionRate: number
+      todayStatus: string
     }
-    for (const t of rangeTasks) {
-      const d = dayMap.get(t.dueDate)
-      if (!d) continue
-      if (t.status === 'completed') d.completed++
-      else if (t.status === 'skipped') d.skipped++
-      else d.pending++
+
+    const taskProgress: TaskProgress[] = []
+    let totalDone = 0
+    let totalNotDone = 0
+    let totalPending = 0
+    const recentNotDone: any[] = []
+
+    const todayStr = todayStrOnly()
+
+    for (const t of tasks) {
+      const dates: Date[] = []
+      const start = parseDateOnly(t.startDate)
+      const lower = start > fromD ? start : fromD
+      if (lower <= toD) {
+        const cursor = new Date(lower)
+        cursor.setHours(0, 0, 0, 0)
+        while (cursor <= toD) {
+          if (occursOn(t, cursor)) dates.push(new Date(cursor))
+          cursor.setDate(cursor.getDate() + 1)
+        }
+      }
+      if (dates.length === 0) continue
+
+      const marks = await db.taskMark.findMany({
+        where: { taskId: t.id, dueDate: { gte: from, lte: to } },
+      })
+      const markByDate = new Map(marks.map((m) => [m.dueDate, m]))
+
+      const days: DayDot[] = dates.map((d) => {
+        const due = dateOnlyStr(d)
+        const m = markByDate.get(due)
+        const status = m?.status || 'pending'
+        return { date: due, status, auto: m?.autoMarked ?? false, reason: m?.reason ?? null }
+      })
+
+      const doneCount = days.filter((d) => d.status === 'done').length
+      const notDoneCount = days.filter((d) => d.status === 'not_done').length
+      const pendingCount = days.filter((d) => d.status === 'pending').length
+      const completionRate = days.length ? Math.round((doneCount / days.length) * 100) : 0
+
+      // today's status — the most recent occurrence <= today
+      let todayStatus = 'none'
+      for (const d of [...days].reverse()) {
+        if (d.date <= todayStr) {
+          todayStatus = d.status
+          break
+        }
+      }
+
+      totalDone += doneCount
+      totalNotDone += notDoneCount
+      totalPending += pendingCount
+
+      for (const d of days) {
+        if (d.status === 'not_done' && d.reason) {
+          recentNotDone.push({ date: d.date, taskName: t.name, reason: d.reason, auto: d.auto, categoryName: t.category?.name, categoryColor: t.category?.color })
+        }
+      }
+
+      taskProgress.push({
+        task: t,
+        days,
+        doneCount,
+        notDoneCount,
+        pendingCount,
+        totalDays: days.length,
+        completionRate,
+        todayStatus,
+      })
     }
-    const daily = Array.from(dayMap.entries()).map(([date, v]) => ({ date, ...v }))
 
-    // category breakdown (completed tasks by category)
-    const catMap = new Map<string, { name: string; color: string; completed: number; total: number; skipped: number }>()
-    for (const t of rangeTasks) {
-      const key = t.categoryId || 'none'
-      const c = t.category
-      if (!catMap.has(key)) catMap.set(key, { name: c?.name || 'Uncategorized', color: c?.color || '#64748b', completed: 0, total: 0, skipped: 0 })
-      const e = catMap.get(key)!
-      e.total++
-      if (t.status === 'completed') e.completed++
-      if (t.status === 'skipped') e.skipped++
-    }
-    const categoryBreakdown = Array.from(catMap.values()).map((c) => ({
-      ...c,
-      rate: c.total ? Math.round((c.completed / c.total) * 100) : 0,
-    }))
+    const total = totalDone + totalNotDone + totalPending
+    const overallRate = total ? Math.round((totalDone / total) * 100) : 0
 
-    // skip analysis
-    const skipTasks = rangeTasks.filter((t) => t.status === 'skipped')
-    const reasonMap = new Map<string, number>()
-    for (const t of skipTasks) {
-      const r = (t.skipReason || 'Other').trim()
-      const chip = SKIP_REASON_CHIPS.find((c) => c.toLowerCase() === r.toLowerCase())
-      const key = chip || 'Other'
-      reasonMap.set(key, (reasonMap.get(key) || 0) + 1)
-    }
-    const reasons = Array.from(reasonMap.entries())
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count)
-
-    const byCategory = Array.from(catMap.values())
-      .map((c) => ({ name: c.name, color: c.color, count: c.skipped }))
-      .filter((c) => c.count > 0)
-      .sort((a, b) => b.count - a.count)
-
-    const byWeekday = [0, 1, 2, 3, 4, 5, 6].map((dow) => ({
-      weekday: dow,
-      count: skipTasks.filter((t) => parseDateOnly(t.dueDate).getDay() === dow).length,
-    }))
-
-    const recentSkips = skipTasks
-      .sort((a, b) => (b.skipLoggedAt?.getTime() || 0) - (a.skipLoggedAt?.getTime() || 0))
-      .slice(0, 12)
-      .map((t) => ({ id: t.id, date: t.dueDate, title: t.title, reason: t.skipReason || '' }))
+    recentNotDone.sort((a, b) => b.date.localeCompare(a.date))
 
     return NextResponse.json({
-      range: { from: parseDateOnlyStr(rf), to: parseDateOnlyStr(rt) },
-      prev: { from: parseDateOnlyStr(pf), to: parseDateOnlyStr(pt) },
-      kpis: {
-        completed,
-        completedPrev: prevCompleted,
-        completionRate,
-        completionRatePrev: prevCompletionRate,
-        skipped,
-        skippedPrev: prevSkipped,
-        currentStreak,
-        longestStreak,
-        subtasksCompleted,
-        subtasksCompletedPrev: prevSubtasks,
-        total,
-      },
-      daily,
-      categoryBreakdown,
-      skipAnalysis: { reasons, byCategory, byWeekday },
-      recentSkips,
+      range: { from, to },
+      summary: { done: totalDone, notDone: totalNotDone, pending: totalPending, total, overallRate },
+      taskProgress: taskProgress.map((tp) => ({
+        taskId: tp.task.id,
+        taskName: tp.task.name,
+        categoryId: tp.task.categoryId,
+        categoryName: tp.task.category?.name || null,
+        categoryColor: tp.task.category?.color || null,
+        priority: tp.task.priority,
+        repeatType: tp.task.repeatType,
+        startDate: tp.task.startDate,
+        doneCount: tp.doneCount,
+        notDoneCount: tp.notDoneCount,
+        pendingCount: tp.pendingCount,
+        totalDays: tp.totalDays,
+        completionRate: tp.completionRate,
+        todayStatus: tp.todayStatus,
+        days: tp.days,
+        subtaskCount: tp.task.subtasks.length,
+      })),
+      recentNotDone: recentNotDone.slice(0, 8),
+      // History for a single task (used by the side panel). We return all tasks' marks here; the client fetches a focused task's history via this same endpoint + filter client-side — but for efficiency we also expose a per-task marks list.
+      marks: taskProgress.flatMap((tp) =>
+        tp.days.map((d) => ({ taskId: tp.task.id, dueDate: d.date, status: d.status, auto: d.auto, reason: d.reason })),
+      ),
     })
   } catch (e) {
     return errorResponse(e)
   }
 }
 
-function computeStreaks(tasks: { dueDate: string; status: string }[]) {
-  const byDay = new Map<string, { planned: number; completed: number; pending: number }>()
-  for (const t of tasks) {
-    const d = t.dueDate
-    if (!byDay.has(d)) byDay.set(d, { planned: 0, completed: 0, pending: 0 })
-    const e = byDay.get(d)!
-    e.planned++
-    if (t.status === 'completed') e.completed++
-    if (t.status === 'pending') e.pending++
-  }
-  const today = todayDateOnly()
-  // current streak: walk back from today
-  let currentStreak = 0
-  let cursor = new Date()
-  cursor.setHours(0, 0, 0, 0)
-  let started = false
-  for (let i = 0; i < 400; i++) {
-    const key = parseDateOnlyStr(cursor)
-    const e = byDay.get(key)
-    if (!e || e.planned === 0) {
-      // neutral day — doesn't break, but only counts if streak already started? keep going
-      cursor = addDays(cursor, -1)
-      continue
-    }
-    if (e.completed >= 1 && e.pending === 0) {
-      currentStreak++
-      started = true
-    } else {
-      if (started) break
-      // before streak started, a failing day breaks (stays 0)
-      break
-    }
-    cursor = addDays(cursor, -1)
-  }
-  // longest streak over the window
-  let longest = 0
-  let run = 0
-  const sorted = Array.from(byDay.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-  let prevDate: Date | null = null
-  for (const [date, e] of sorted) {
-    const d = parseDateOnly(date)
-    if (prevDate && addDays(prevDate, 1).getTime() !== d.getTime()) {
-      // gap — neutral days in between don't break; only a failing day breaks
-    }
-    prevDate = d
-    if (e.planned === 0) continue // neutral
-    if (e.completed >= 1 && e.pending === 0) {
-      run++
-      longest = Math.max(longest, run)
-    } else {
-      run = 0
-    }
-  }
-  return { currentStreak, longestStreak: Math.max(longest, currentStreak) }
+function todayStrOnly(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function dateOnlyStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

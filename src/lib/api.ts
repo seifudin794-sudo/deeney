@@ -1,4 +1,4 @@
-import type { Category, RecurringTemplate, Settings, Task, User } from '@/lib/types'
+import type { Category, MarkStatus, Priority, RepeatType, Subtask, Task, TaskMark, User } from '@/lib/types'
 
 async function req<T>(url: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -13,7 +13,6 @@ async function req<T>(url: string, opts?: RequestInit): Promise<T> {
     } catch {}
     throw new ApiError(res.status, msg)
   }
-  if (res.status === 204) return undefined as T
   const ct = res.headers.get('content-type') || ''
   if (!ct.includes('application/json')) return undefined as T
   return res.json() as Promise<T>
@@ -49,112 +48,35 @@ export const categories = {
 }
 
 // ---------- Tasks ----------
-export type TaskFilter = {
-  from?: string
-  to?: string
-  status?: string
-  categoryId?: string
-  priority?: string
-  q?: string
-  recurring?: 'true' | 'false'
+export type TaskInput = {
+  name: string
+  categoryId?: string | null
+  priority?: Priority
+  repeatType?: RepeatType
+  startDate: string
+  subtasks?: { id?: string; title: string }[]
 }
 export const tasks = {
-  list: (filter: TaskFilter = {}) => {
-    const p = new URLSearchParams()
-    Object.entries(filter).forEach(([k, v]) => v && p.set(k, String(v)))
-    const qs = p.toString()
-    return req<Task[]>(`/api/tasks${qs ? `?${qs}` : ''}`)
-  },
-  create: (body: {
-    title: string
-    description?: string
-    categoryId?: string | null
-    priority?: string
-    dueDate: string
-    recurrenceRule?: string | null
-    recurrenceWeekdays?: string | null
-    subtasks?: string[]
-  }) => req<Task | { ok: true; recurring: true }>('/api/tasks', { method: 'POST', body: JSON.stringify(body) }),
-  update: (id: string, body: Partial<Task>) =>
-    req<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  list: () => req<Task[]>('/api/tasks'),
+  create: (body: TaskInput) => req<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: TaskInput) => req<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) => req<{ ok: true }>(`/api/tasks/${id}`, { method: 'DELETE' }),
-  complete: (id: string, completed: boolean) =>
-    req<Task>(`/api/tasks/${id}/complete`, { method: 'POST', body: JSON.stringify({ completed }) }),
-  skip: (id: string, reason: string, rescheduleTo?: string) =>
-    req<{ task: Task; copy: Task | null }>(`/api/tasks/${id}/skip`, {
-      method: 'POST',
-      body: JSON.stringify({ reason, rescheduleTo }),
-    }),
-  duplicate: (id: string) => req<Task>(`/api/tasks/${id}/duplicate`, { method: 'POST' }),
-  reorder: (ids: string[]) =>
-    req<{ ok: true }>('/api/tasks/reorder', { method: 'POST', body: JSON.stringify({ ids }) }),
 }
 
-// ---------- Subtasks ----------
-export const subtasks = {
-  create: (taskId: string, title: string) =>
-    req<import('@/lib/types').Subtask>(`/api/tasks/${taskId}/subtasks`, {
-      method: 'POST',
-      body: JSON.stringify({ title }),
-    }),
-  update: (taskId: string, body: { title?: string; ids?: string[] }) =>
-    req<unknown>(`/api/tasks/${taskId}/subtasks`, { method: 'PATCH', body: JSON.stringify(body) }),
-  toggle: (id: string, isDone: boolean) =>
-    req<import('@/lib/types').Subtask>(`/api/subtasks/${id}`, { method: 'PATCH', body: JSON.stringify({ isDone }) }),
-  remove: (id: string) => req<{ ok: true }>(`/api/subtasks/${id}`, { method: 'DELETE' }),
-}
-
-// ---------- Recurring ----------
-export const recurring = {
-  list: () => req<RecurringTemplate[]>('/api/recurring'),
-  create: (body: Partial<RecurringTemplate>) =>
-    req<RecurringTemplate>('/api/recurring', { method: 'POST', body: JSON.stringify(body) }),
-  update: (id: string, body: Partial<RecurringTemplate>) =>
-    req<RecurringTemplate>(`/api/recurring/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  remove: (id: string) => req<{ ok: true }>(`/api/recurring/${id}`, { method: 'DELETE' }),
-  generate: () => req<{ ok: true; generated: number }>('/api/recurring/generate', { method: 'POST' }),
+// ---------- Marks ----------
+export type MarkInput = { status: MarkStatus; reason?: string }
+export const marks = {
+  // Mark a task for a given due date (creates the mark if missing).
+  set: (taskId: string, dueDate: string, body: MarkInput) =>
+    req<TaskMark>(`/api/marks?taskId=${taskId}&date=${dueDate}`, { method: 'POST', body: JSON.stringify(body) }),
 }
 
 // ---------- Stats ----------
 export const stats = {
-  overview: (params: { range?: string; from?: string; to?: string; categories?: string }) => {
-    const p = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => v && p.set(k, String(v)))
+  overview: (params: { from: string; to: string }) => {
+    const p = new URLSearchParams({ from: params.from, to: params.to })
     return req<any>(`/api/stats?${p.toString()}`)
   },
-  day: (date: string) => req<{ tasks: Task[] }>(`/api/stats/day?date=${date}`),
-  heatmap: () => req<{ date: string; completed: number; skipped: number; pending: number }[]>('/api/stats/heatmap'),
 }
 
-// ---------- Settings ----------
-export const settingsApi = {
-  get: () => req<Settings>('/api/settings'),
-  update: (body: Partial<Settings>) =>
-    req<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),
-  loadDemo: () => req<{ ok: true }>('/api/settings/demo-load', { method: 'POST' }),
-  clearDemo: () => req<{ ok: true }>('/api/settings/demo-clear', { method: 'POST' }),
-}
-
-export const exportUrl = {
-  csv: (filter: TaskFilter) => {
-    const p = new URLSearchParams()
-    Object.entries(filter).forEach(([k, v]) => v && p.set(k, String(v)))
-    return `/api/export/csv?${p.toString()}`
-  },
-  pdf: (params: { range?: string; from?: string; to?: string; categories?: string }) => {
-    const p = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => v && p.set(k, String(v)))
-    return `/api/export/pdf?${p.toString()}`
-  },
-}
-
-// Aggregate namespace for convenience in hooks.
-export const api = {
-  auth,
-  categories,
-  tasks,
-  subtasks,
-  recurring,
-  stats,
-  settings: settingsApi,
-}
+export const api = { auth, categories, tasks, marks, stats }

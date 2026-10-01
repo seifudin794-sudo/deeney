@@ -1,7 +1,6 @@
-// Shared domain types — mirror the database schema.
 export type Priority = 'low' | 'medium' | 'high'
-export type TaskStatus = 'pending' | 'completed' | 'skipped'
-export type RecurrenceRule = 'daily' | 'weekdays' | 'weekly' | 'monthly'
+export type RepeatType = 'daily' | 'every_3_days' | 'weekly'
+export type MarkStatus = 'pending' | 'done' | 'not_done'
 
 export type Category = {
   id: string
@@ -14,10 +13,7 @@ export type Category = {
 export type Subtask = {
   id: string
   taskId: string
-  userId: string
   title: string
-  isDone: boolean
-  doneAt: string | null
   sortOrder: number
   createdAt: string
 }
@@ -25,18 +21,11 @@ export type Subtask = {
 export type Task = {
   id: string
   userId: string
-  title: string
-  description: string | null
+  name: string
   categoryId: string | null
   priority: Priority
-  dueDate: string // YYYY-MM-DD
-  status: TaskStatus
-  completedAt: string | null
-  skipReason: string | null
-  skipLoggedAt: string | null
-  recurrenceRule: RecurrenceRule | null
-  recurrenceWeekdays: string | null
-  parentRecurringId: string | null
+  repeatType: RepeatType
+  startDate: string // YYYY-MM-DD
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -44,65 +33,38 @@ export type Task = {
   subtasks: Subtask[]
 }
 
-export type RecurringTemplate = {
+export type TaskMark = {
   id: string
-  userId: string
-  title: string
-  description: string | null
-  categoryId: string | null
-  priority: Priority
-  rule: RecurrenceRule
-  weekdays: string | null
-  startDate: string
-  endDate: string | null
-  isActive: boolean
-  createdAt: string
-  category?: Category | null
+  taskId: string
+  dueDate: string
+  status: MarkStatus
+  reason: string | null
+  autoMarked: boolean
+  markedAt: string | null
 }
 
-export type Settings = {
-  theme: 'light' | 'dark' | 'system'
-  weekStartsOn: 0 | 1
-  timezone: string
-  onboardingDone: boolean
+// A task occurrence for a given date, with its mark resolved.
+export type Occurrence = {
+  taskId: string
+  dueDate: string
+  task: Task
+  mark: TaskMark
 }
 
-export type User = {
-  id: string
-  email: string
-  name: string | null
-  provider: string
+export const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
+  high: { label: 'High', color: 'var(--danger)' },
+  medium: { label: 'Medium', color: 'var(--warning)' },
+  low: { label: 'Low', color: 'var(--text-muted)' },
 }
 
-export const PRIORITY_ORDER: Record<Priority, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
+export const REPEAT_META: Record<RepeatType, { label: string }> = {
+  daily: { label: 'Daily' },
+  every_3_days: { label: 'Every 3 days' },
+  weekly: { label: 'Weekly' },
 }
 
-export const SKIP_REASON_CHIPS = [
-  'Ran out of time',
-  'Low energy',
-  'Blocked by someone',
-  'Priorities changed',
-  'Forgot',
-] as const
-
-export type CategoryColor = {
-  name: string
-  value: string
-}
-
-// Curated color options for categories (stored as hex in DB; UI consumes token-like values).
-export const CATEGORY_COLORS: CategoryColor[] = [
-  { name: 'Rose', value: '#f43f5e' },
-  { name: 'Amber', value: '#f59e0b' },
-  { name: 'Emerald', value: '#10b981' },
-  { name: 'Teal', value: '#14b8a6' },
-  { name: 'Violet', value: '#8b5cf6' },
-  { name: 'Fuchsia', value: '#d946ef' },
-  { name: 'Orange', value: '#f97316' },
-  { name: 'Lime', value: '#84cc16' },
-  { name: 'Sky', value: '#0ea5e9' },
-  { name: 'Slate', value: '#64748b' },
+export const CATEGORY_COLORS = [
+  '#f43f5e', '#f59e0b', '#10b981', '#14b8a6',
+  '#8b5cf6', '#d946ef', '#f97316', '#0ea5e9',
+  '#84cc16', '#64748b',
 ]

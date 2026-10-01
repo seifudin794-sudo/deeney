@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Cadence — Personal Task Journal',
-  description: 'A calm, data-rich personal task journal. Plan your day, reflect on your week, build a streak.',
+  title: 'Cadence — Personal Task Tracker',
+  description: 'Track your daily habits and tasks, one tap at a time.',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -22,7 +22,6 @@ export async function POST(req: NextRequest) {
         name: name || normalized.split('@')[0],
         passwordHash: hashPassword(password),
         provider: 'credentials',
-        settings: { create: {} },
       },
     })
     await seedDefaults(user.id)

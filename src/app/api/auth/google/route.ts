@@ -16,7 +16,6 @@ export async function POST() {
           email: DEMO_EMAIL,
           name: 'You',
           provider: 'google',
-          settings: { create: {} },
         },
       })
       const colors = ['#f59e0b', '#8b5cf6', '#14b8a6']

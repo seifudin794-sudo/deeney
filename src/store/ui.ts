@@ -2,43 +2,24 @@
 
 import { create } from 'zustand'
 
-export type ViewKey =
-  | 'today'
-  | 'dashboard'
-  | 'tasks'
-  | 'calendar'
-  | 'recurring'
-  | 'categories'
-  | 'settings'
+export type ViewKey = 'dashboard' | 'marker' | 'adder'
 
 type UIState = {
   view: ViewKey
   setView: (v: ViewKey) => void
 
-  dayDrawerDate: string | null
-  openDayDrawer: (date: string) => void
-  closeDayDrawer: () => void
+  // Dashboard side panel: selected task id for history
+  historyTaskId: string | null
+  setHistoryTaskId: (id: string | null) => void
 
-  shortcutsOpen: boolean
-  setShortcutsOpen: (v: boolean) => void
-
-  sidebarCollapsed: boolean
-  toggleSidebar: () => void
-  setSidebarCollapsed: (v: boolean) => void
+  theme: 'light' | 'dark' | 'system'
+  setTheme: (t: 'light' | 'dark' | 'system') => void
 }
 
 export const useUI = create<UIState>((set) => ({
-  view: 'today',
+  view: 'dashboard',
   setView: (view) => set({ view }),
 
-  dayDrawerDate: null,
-  openDayDrawer: (dayDrawerDate) => set({ dayDrawerDate }),
-  closeDayDrawer: () => set({ dayDrawerDate: null }),
-
-  shortcutsOpen: false,
-  setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
-
-  sidebarCollapsed: false,
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+  historyTaskId: null,
+  setHistoryTaskId: (historyTaskId) => set({ historyTaskId }),
 }))

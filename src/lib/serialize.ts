@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import type { Category, RecurringTemplate, Subtask, Task } from '@/lib/types'
+import type { Category, Subtask, Task, TaskMark } from '@/lib/types'
 
 export function serializeCategory(c: any): Category {
   return {
@@ -15,10 +15,7 @@ export function serializeSubtask(s: any): Subtask {
   return {
     id: s.id,
     taskId: s.taskId,
-    userId: s.userId,
     title: s.title,
-    isDone: s.isDone,
-    doneAt: s.doneAt ? s.doneAt.toISOString() : null,
     sortOrder: s.sortOrder,
     createdAt: s.createdAt.toISOString(),
   }
@@ -28,18 +25,11 @@ export function serializeTask(t: any): Task {
   return {
     id: t.id,
     userId: t.userId,
-    title: t.title,
-    description: t.description,
+    name: t.name,
     categoryId: t.categoryId,
     priority: t.priority,
-    dueDate: t.dueDate,
-    status: t.status,
-    completedAt: t.completedAt ? t.completedAt.toISOString() : null,
-    skipReason: t.skipReason,
-    skipLoggedAt: t.skipLoggedAt ? t.skipLoggedAt.toISOString() : null,
-    recurrenceRule: t.recurrenceRule,
-    recurrenceWeekdays: t.recurrenceWeekdays,
-    parentRecurringId: t.parentRecurringId,
+    repeatType: t.repeatType,
+    startDate: t.startDate,
     sortOrder: t.sortOrder,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
@@ -48,21 +38,15 @@ export function serializeTask(t: any): Task {
   }
 }
 
-export function serializeRecurring(r: any): RecurringTemplate {
+export function serializeMark(m: any): TaskMark {
   return {
-    id: r.id,
-    userId: r.userId,
-    title: r.title,
-    description: r.description,
-    categoryId: r.categoryId,
-    priority: r.priority,
-    rule: r.rule,
-    weekdays: r.weekdays,
-    startDate: r.startDate,
-    endDate: r.endDate,
-    isActive: r.isActive,
-    createdAt: r.createdAt.toISOString(),
-    category: r.category ? serializeCategory(r.category) : null,
+    id: m.id,
+    taskId: m.taskId,
+    dueDate: m.dueDate,
+    status: m.status,
+    reason: m.reason,
+    autoMarked: m.autoMarked,
+    markedAt: m.markedAt ? m.markedAt.toISOString() : null,
   }
 }
 

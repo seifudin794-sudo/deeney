@@ -1,9 +1,8 @@
-import { RecurrenceRule } from '@/lib/types'
+import type { RepeatType } from '@/lib/types'
 
-const WEEK = 7
+const MS_PER_DAY = 1000 * 60 * 60 * 24
 
 export function toDateOnly(d: Date): string {
-  // Local date as YYYY-MM-DD (avoids UTC drift).
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -13,11 +12,6 @@ export function toDateOnly(d: Date): string {
 export function parseDateOnly(s: string): Date {
   const [y, m, d] = s.split('-').map(Number)
   return new Date(y, (m || 1) - 1, d || 1)
-}
-
-// Same as toDateOnly but takes a Date — kept as a separate name for clarity at call sites.
-export function parseDateOnlyStr(d: Date): string {
-  return toDateOnly(d)
 }
 
 export function todayDateOnly(): string {
@@ -30,13 +24,7 @@ export function addDays(date: Date, days: number): Date {
   return d
 }
 
-export function addMonths(date: Date, months: number): Date {
-  const d = new Date(date)
-  d.setMonth(d.getMonth() + months)
-  return d
-}
-
-export function startOfWeek(date: Date, weekStartsOn: 0 | 1): Date {
+export function startOfWeek(date: Date, weekStartsOn: 0 | 1 = 1): Date {
   const d = new Date(date)
   const day = d.getDay()
   const diff = (day - weekStartsOn + 7) % 7
@@ -45,116 +33,78 @@ export function startOfWeek(date: Date, weekStartsOn: 0 | 1): Date {
   return d
 }
 
+export function endOfWeek(date: Date, weekStartsOn: 0 | 1 = 1): Date {
+  return addDays(startOfWeek(date, weekStartsOn), 6)
+}
+
 export function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
 
 export function endOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
 
 export function diffDays(a: Date, b: Date): number {
-  const ms = 1000 * 60 * 60 * 24
   const da = new Date(a.getFullYear(), a.getMonth(), a.getDate())
   const db = new Date(b.getFullYear(), b.getMonth(), b.getDate())
-  return Math.round((da.getTime() - db.getTime()) / ms)
+  return Math.round((da.getTime() - db.getTime()) / MS_PER_DAY)
 }
 
-// Does this recurrence rule produce an occurrence on `date`?
-export function ruleMatches(
-  rule: RecurrenceRule,
-  weekdays: string | null,
-  date: Date,
-): boolean {
-  const dow = date.getDay() // 0 Sun .. 6 Sat
-  switch (rule) {
+// Does the task's repeat rule produce an occurrence on `date`?
+export function occursOn(task: { repeatType: RepeatType; startDate: string }, date: Date): boolean {
+  const start = parseDateOnly(task.startDate)
+  if (date < start) return false
+  const dStart = start.getDay()
+  switch (task.repeatType) {
     case 'daily':
       return true
-    case 'weekdays':
-      if (!weekdays) return dow >= 1 && dow <= 5
-      const set = weekdays.split(',').map((s) => Number(s))
-      return set.includes(dow)
+    case 'every_3_days':
+      return diffDays(date, start) % 3 === 0
     case 'weekly':
-      return true // one per week — handled by week-of selection
-    case 'monthly':
-      return true // one per month — handled by month-of selection
+      return date.getDay() === dStart
     default:
       return false
   }
 }
 
-// Generate the occurrence date list for a recurring template over [from, to].
-export function occurrencesFor(
-  template: {
-    rule: RecurrenceRule
-    weekdays: string | null
-    startDate: string
-    endDate: string | null
-  },
-  from: Date,
-  to: Date,
-): Date[] {
-  const start = parseDateOnly(template.startDate)
-  const end = template.endDate ? parseDateOnly(template.endDate) : null
+// All occurrence dates for a task within [from, to] inclusive.
+export function occurrenceDates(task: { repeatType: RepeatType; startDate: string }, from: Date, to: Date): Date[] {
   const out: Date[] = []
+  const start = parseDateOnly(task.startDate)
   const lower = start > from ? start : from
   if (lower > to) return out
-  if (end && end < lower) return out
-
-  if (template.rule === 'daily' || template.rule === 'weekdays') {
-    let cursor = new Date(lower)
-    cursor.setHours(0, 0, 0, 0)
-    while (cursor <= to) {
-      if (end && cursor > end) break
-      if (ruleMatches(template.rule, template.weekdays, cursor)) {
-        out.push(new Date(cursor))
-      }
-      cursor = addDays(cursor, 1)
-    }
-    return out
-  }
-
-  if (template.rule === 'weekly') {
-    // One occurrence per week — anchor on the start date's weekday.
-    const anchorDow = start.getDay()
-    let cursor = new Date(lower)
-    cursor.setHours(0, 0, 0, 0)
-    // advance to first matching weekday >= lower
-    while (cursor.getDay() !== anchorDow && cursor <= to) {
-      cursor = addDays(cursor, 1)
-    }
-    while (cursor <= to) {
-      if (end && cursor > end) break
-      out.push(new Date(cursor))
-      cursor = addDays(cursor, WEEK)
-    }
-    return out
-  }
-
-  if (template.rule === 'monthly') {
-    const anchorDay = start.getDate()
-    let cursor = new Date(lower.getFullYear(), lower.getMonth(), 1)
-    while (cursor <= to) {
-      const day = Math.min(anchorDay, new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate())
-      const occ = new Date(cursor.getFullYear(), cursor.getMonth(), day)
-      if (occ >= lower && occ <= to && (!end || occ <= end)) {
-        out.push(occ)
-      }
-      cursor = addMonths(cursor, 1)
-    }
-    return out
+  const cursor = new Date(lower)
+  cursor.setHours(0, 0, 0, 0)
+  while (cursor <= to) {
+    if (occursOn(task, cursor)) out.push(new Date(cursor))
+    cursor.setDate(cursor.getDate() + 1)
   }
   return out
 }
 
-export function weekdayName(dow: number, short = false): string {
-  const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const n = names[dow] || ''
-  return short ? n.slice(0, 3) : n
+// AUTO NOT-DONE RULE: a pending mark is auto-flipped to not_done once
+// "48 hours after its due date ends" has passed — i.e. when today is at least
+// 3 calendar days after the due date (end_of_due_date + 48h).
+export function isPastAutoWindow(dueDate: string, now: Date = new Date()): boolean {
+  const due = parseDateOnly(dueDate)
+  return diffDays(now, due) >= 3
 }
 
-export function monthName(m: number, short = false): string {
-  const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const n = names[m] || ''
-  return short ? n.slice(0, 3) : n
+export function weekdayShort(d: number): string {
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d] || ''
+}
+
+export function monthShort(m: number): string {
+  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m] || ''
+}
+
+export function formatDateLong(s: string): string {
+  return parseDateOnly(s).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+export function formatDateShort(s: string): string {
+  return parseDateOnly(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+export function formatDateMed(s: string): string {
+  return parseDateOnly(s).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }

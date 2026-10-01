@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { BookOpenCheck, Loader2, Mail, Lock, User as UserIcon } from 'lucide-react'
+import { CheckCircle2, Loader2, Mail, Lock, User as UserIcon } from 'lucide-react'
 import { useLogin, useRegister, useGoogle } from '@/hooks/use-data'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api'
@@ -31,26 +31,26 @@ export function AuthScreen() {
         className="pointer-events-none absolute inset-0 opacity-60"
         style={{
           background:
-            'radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--primary) 16%, transparent) 0%, transparent 70%)',
+            'radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--primary) 18%, transparent) 0%, transparent 70%)',
         }}
       />
       <div className="relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-            <BookOpenCheck className="h-6 w-6" />
+            <CheckCircle2 className="h-6 w-6" />
           </div>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-text-primary">Cadence</h1>
-          <p className="mt-1 text-sm text-text-muted">Your personal task journal — plan, reflect, repeat.</p>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-text">Cadence</h1>
+          <p className="mt-1 text-sm text-text-muted">Track your daily habits, one tap at a time.</p>
         </div>
 
-        <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
           <div className="mb-5 flex rounded-xl bg-muted p-1 text-sm">
             {(['login', 'register'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
                 className={`flex-1 rounded-lg py-2 font-medium transition-colors ${
-                  mode === m ? 'bg-surface text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'
+                  mode === m ? 'bg-card text-text shadow-sm' : 'text-text-muted hover:text-text'
                 }`}
               >
                 {m === 'login' ? 'Sign in' : 'Create account'}
@@ -62,7 +62,7 @@ export function AuthScreen() {
             {mode === 'register' && (
               <Field icon={UserIcon}>
                 <input
-                  className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                  className="w-full bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
                   placeholder="Your name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -73,7 +73,7 @@ export function AuthScreen() {
               <input
                 type="email"
                 required
-                className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                className="w-full bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -83,7 +83,7 @@ export function AuthScreen() {
               <input
                 type="password"
                 required
-                className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                className="w-full bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -109,14 +109,14 @@ export function AuthScreen() {
           <button
             onClick={() => google.mutateAsync().catch((err: ApiError) => toast.error(err.message))}
             disabled={pending}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface py-2.5 text-sm font-medium text-text-primary transition hover:bg-muted disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-2.5 text-sm font-medium text-text transition hover:bg-muted disabled:opacity-60"
           >
             <GoogleIcon /> Continue with Google
           </button>
         </div>
 
         <p className="mt-4 text-center text-[11px] leading-relaxed text-text-muted">
-          Your data is stored locally in this sandbox and scoped to your account.
+          Your data is scoped to your account.
           <br />Use any email + password to create an account.
         </p>
       </div>
