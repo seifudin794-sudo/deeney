@@ -6,6 +6,9 @@ import { isPastAutoWindow, occursOn, parseDateOnly, todayDateOnly } from '@/lib/
 
 // POST /api/marks?taskId=...&date=YYYY-MM-DD
 // Body: { status: 'done' | 'not_done', reason?: string }
+// - Marks the OVERALL task for the day. This is independent of subtask marks:
+//   marking the task done does NOT auto-check its subtasks, and marking a
+//   subtask done does NOT auto-complete the task. They're tracked separately.
 // - Ensures the task actually occurs on that date.
 // - If status === 'not_done', a reason (>=2 chars) is required.
 // - Clears autoMarked (user is taking manual ownership).

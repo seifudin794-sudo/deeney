@@ -55,6 +55,7 @@ model Task {
   priority   String   @default("medium") // low | medium | high
   repeatType String   @default("daily")  // daily | every_3_days | weekly
   startDate  String   // YYYY-MM-DD
+  time       String?  // HH:MM (24h), nullable — when the task should be done
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

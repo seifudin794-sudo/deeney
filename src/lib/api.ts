@@ -54,6 +54,7 @@ export type TaskInput = {
   priority?: Priority
   repeatType?: RepeatType
   startDate: string
+  time?: string | null
   subtasks?: { id?: string; title: string }[]
 }
 export const tasks = {

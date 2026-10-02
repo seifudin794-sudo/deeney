@@ -1,10 +1,12 @@
 'use client'
 
-import { LayoutDashboard, CheckSquare, PlusCircle, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, PlusCircle, Sun, Moon, LogOut } from 'lucide-react'
 import { useUI, ViewKey } from '@/store/ui'
 import { useTheme } from 'next-themes'
+import { useLogout } from '@/hooks/use-data'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 const NAV: { key: ViewKey; label: string; icon: any }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -15,11 +17,16 @@ const NAV: { key: ViewKey; label: string; icon: any }[] = [
 export function TopBar() {
   const { view, setView } = useUI()
   const { theme, setTheme } = useTheme()
+  const logout = useLogout()
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
   }, [])
+
+  function handleLogout() {
+    logout.mutate(undefined, { onSuccess: () => toast.success('Signed out') })
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur">
@@ -28,7 +35,7 @@ export function TopBar() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <CheckSquare className="h-5 w-5" />
           </div>
-          <span className="hidden text-base font-semibold text-text sm:block">Cadence</span>
+          <span className="hidden text-base font-semibold text-text sm:block">Deeney</span>
         </div>
 
         <nav className="mx-auto flex rounded-xl bg-muted p-1">
@@ -57,6 +64,15 @@ export function TopBar() {
           aria-label="Toggle theme"
         >
           {mounted && theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+        <button
+          onClick={handleLogout}
+          disabled={logout.isPending}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border text-text-muted transition hover:text-danger disabled:opacity-60"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
         </button>
       </div>
     </header>

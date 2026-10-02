@@ -20,7 +20,7 @@ export function AppShell() {
       </main>
       <footer className="mt-auto border-t border-border bg-card/40">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-3 text-[11px] text-text-muted">
-          <span>Cadence — personal task tracker</span>
+          <span>Deeney — personal task tracker</span>
           <span className="tnum">Africa/Nairobi</span>
         </div>
       </footer>

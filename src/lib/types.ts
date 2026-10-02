@@ -27,6 +27,7 @@ export type Task = {
   priority: Priority
   repeatType: RepeatType
   startDate: string // YYYY-MM-DD
+  time: string | null // HH:MM (24h), nullable
   sortOrder: number
   createdAt: string
   updatedAt: string

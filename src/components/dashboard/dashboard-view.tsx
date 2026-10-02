@@ -297,8 +297,12 @@ function TaskProgressCard({ tp, onClick }: { tp: any; onClick: () => void }) {
       {/* progress bar */}
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between text-[11px]">
-          <span className="text-text-muted">Completed</span>
-          <span className="tnum font-medium text-text">{tp.doneCount}/{tp.totalDays} · {tp.completionRate}%</span>
+          <span className="text-text-muted">{tp.hasSubtasks ? 'Subtasks done' : 'Completed'}</span>
+          <span className="tnum font-medium text-text">
+            {tp.hasSubtasks
+              ? `${tp.days.reduce((acc: number, d: any) => acc + Object.values(d.subtasks || {}).filter((v: string) => v === 'done').length, 0)}/${tp.subtaskCount * tp.totalDays} · ${tp.completionRate}%`
+              : `${tp.doneCount}/${tp.totalDays} · ${tp.completionRate}%`}
+          </span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
           <div className="h-full rounded-full bg-success transition-all" style={{ width: `${tp.completionRate}%` }} />

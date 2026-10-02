@@ -30,6 +30,7 @@ export function serializeTask(t: any): Task {
     priority: t.priority,
     repeatType: t.repeatType,
     startDate: t.startDate,
+    time: t.time ?? null,
     sortOrder: t.sortOrder,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),

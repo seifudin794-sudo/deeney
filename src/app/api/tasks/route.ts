@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser()
     const body = (await req.json()) as TaskInput
-    const { name, categoryId, priority = 'medium', repeatType = 'daily', startDate, subtasks = [] } = body
+    const { name, categoryId, priority = 'medium', repeatType = 'daily', startDate, time, subtasks = [] } = body
     if (!name || !String(name).trim()) throw new ResponseError(400, 'Task name is required')
     if (!startDate) throw new ResponseError(400, 'Start date is required')
 
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
         priority: priority as Priority,
         repeatType: repeatType as RepeatType,
         startDate,
+        time: time || null,
         sortOrder,
         subtasks: subtasks.length
           ? { create: subtasks.map((s, i) => ({ userId: user.id, title: s.title, sortOrder: i })) }

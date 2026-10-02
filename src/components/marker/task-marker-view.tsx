@@ -266,6 +266,12 @@ function MarkerCard({
       <button onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
         <CategoryPill category={task.category} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text">{task.name}</span>
+        {task.time && (
+          <span className="hidden shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-text-soft tnum sm:inline-flex">
+            <Clock className="h-3 w-3" />
+            {formatTime(task.time)}
+          </span>
+        )}
         {mark?.autoMarked && (
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-text-muted">Auto</span>
         )}
@@ -297,7 +303,9 @@ function MarkerCard({
               </div>
               <ul className="space-y-1">
                 {task.subtasks.map((s) => {
-                  const checked = subtaskMarks[s.id] === 'done'
+                  const sStatus = subtaskMarks[s.id] || 'pending'
+                  const checked = sStatus === 'done'
+                  const autoNotDone = sStatus === 'not_done'
                   return (
                     <li key={s.id}>
                       <button
@@ -307,14 +315,18 @@ function MarkerCard({
                         <span
                           className={cn(
                             'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
-                            checked ? 'border-success bg-success text-white' : 'border-border',
+                            checked ? 'border-success bg-success text-white' : autoNotDone ? 'border-danger bg-danger/20 text-danger' : 'border-border',
                           )}
                         >
                           {checked && <Check className="animate-pop h-3 w-3" strokeWidth={3} />}
+                          {autoNotDone && <X className="h-3 w-3" strokeWidth={3} />}
                         </span>
                         <span className={cn('flex-1', checked ? 'text-text-muted line-through' : 'text-text-soft')}>
                           {s.title}
                         </span>
+                        {autoNotDone && (
+                          <span className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-danger">Auto</span>
+                        )}
                       </button>
                     </li>
                   )
@@ -330,8 +342,15 @@ function MarkerCard({
             </p>
           )}
 
-          {/* reason box (shown after pressing NO) */}
-          {showReason ? (
+          {/* For tasks WITH subtasks: the status is derived from subtask completion.
+              No YES/NO buttons — mark each subtask individually. */}
+          {task.subtasks.length > 0 ? (
+            <div className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs text-text-muted">
+              {subtaskDoneCount === subtaskTotal
+                ? 'All subtasks done ✓'
+                : 'Mark each subtask individually — the task is done when all are checked.'}
+            </div>
+          ) : showReason ? (
             <div className="mb-3">
               <label className="mb-1.5 block text-xs font-medium text-text-soft">Why wasn't this done? <span className="text-danger">*</span></label>
               <textarea
@@ -379,4 +398,12 @@ function MarkerCard({
       )}
     </div>
   )
+}
+
+// Convert "14:30" → "2:30 PM" for display.
+function formatTime(t: string): string {
+  const [h, m] = t.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`
 }

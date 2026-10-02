@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Cadence — Personal Task Tracker',
+  title: 'Deeney — Personal Task Tracker',
   description: 'Track your daily habits and tasks, one tap at a time.',
 }
 

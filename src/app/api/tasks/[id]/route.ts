@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const user = await requireUser()
     const { id } = await ctx.params
     const body = (await req.json()) as TaskInput
-    const { name, categoryId, priority, repeatType, startDate, subtasks } = body
+    const { name, categoryId, priority, repeatType, startDate, time, subtasks } = body
     const task = await db.task.findUnique({ where: { id }, include: TASK_INCLUDE })
     if (!task || task.userId !== user.id) throw new ResponseError(404, 'Task not found')
 
@@ -52,6 +52,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         priority: (priority as Priority) ?? task.priority,
         repeatType: (repeatType as RepeatType) ?? task.repeatType,
         startDate: startDate ?? task.startDate,
+        time: time !== undefined ? (time || null) : task.time,
       },
       include: TASK_INCLUDE,
     })
