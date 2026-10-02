@@ -1,6 +1,7 @@
 export type Priority = 'low' | 'medium' | 'high'
 export type RepeatType = 'daily' | 'every_3_days' | 'weekly'
 export type MarkStatus = 'pending' | 'done' | 'not_done'
+export type SubtaskStatus = 'pending' | 'done'
 
 export type Category = {
   id: string
@@ -40,6 +41,14 @@ export type TaskMark = {
   status: MarkStatus
   reason: string | null
   autoMarked: boolean
+  markedAt: string | null
+}
+
+export type SubtaskMark = {
+  id: string
+  subtaskId: string
+  dueDate: string
+  status: SubtaskStatus
   markedAt: string | null
 }
 

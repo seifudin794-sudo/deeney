@@ -75,7 +75,8 @@ model Subtask {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task  Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  marks SubtaskMark[]
 
   @@index([taskId])
 }
@@ -98,5 +99,23 @@ model TaskMark {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, dueDate])
+  @@index([userId, dueDate])
+}
+
+// One record per (subtask, due date) — so each subtask can be ticked off
+// individually for the day, independent of the parent task's overall status.
+model SubtaskMark {
+  id        String    @id @default(cuid())
+  subtaskId String
+  userId    String
+  dueDate   String    // YYYY-MM-DD — same day as the parent task occurrence
+  status    String    @default("pending") // pending | done
+  markedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  subtask Subtask @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
+
+  @@unique([subtaskId, dueDate])
   @@index([userId, dueDate])
 }

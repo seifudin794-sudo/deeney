@@ -5,8 +5,7 @@ import { ChevronLeft, ChevronRight, ChevronDown, Check, X, Loader2, AlertCircle,
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Checkbox } from '@/components/ui/checkbox'
-import { useTasks, useStats, useSetMark } from '@/hooks/use-data'
+import { useTasks, useStats, useSetMark, useToggleSubtaskMark } from '@/hooks/use-data'
 import { CategoryPill, PriorityPill, RepeatPill, StatusBadge } from '@/components/common/bits'
 import { EmptyState, LoadingCard } from '@/components/common/states'
 import { useUI } from '@/store/ui'
@@ -41,6 +40,17 @@ export function TaskMarkerView() {
           autoMarked: row.auto,
           markedAt: null,
         })
+      }
+    }
+    return m
+  }, [stats, selectedDate])
+
+  // Map: taskId -> { subtaskId -> 'done' | 'pending' }
+  const subtaskMarkMap = useMemo(() => {
+    const m = new Map<string, Record<string, string>>()
+    for (const row of stats?.marks || []) {
+      if (row.dueDate === selectedDate && (row as any).subtasks) {
+        m.set(row.taskId, (row as any).subtasks as Record<string, string>)
       }
     }
     return m
@@ -141,6 +151,7 @@ export function TaskMarkerView() {
                 status={status}
                 open={open}
                 dueDate={selectedDate}
+                subtaskMarks={subtaskMarkMap.get(t.id) || {}}
                 onToggle={() => setOpenId(open ? null : t.id)}
                 onMarked={() => {
                   refetch()
@@ -182,6 +193,7 @@ function MarkerCard({
   status,
   open,
   dueDate,
+  subtaskMarks,
   onToggle,
   onMarked,
 }: {
@@ -190,10 +202,12 @@ function MarkerCard({
   status: 'pending' | 'done' | 'not_done'
   open: boolean
   dueDate: string
+  subtaskMarks: Record<string, string>
   onToggle: () => void
   onMarked: () => void
 }) {
   const setMark = useSetMark()
+  const toggleSubtask = useToggleSubtaskMark()
   const [showReason, setShowReason] = useState(false)
   const [reason, setReason] = useState(mark?.reason || '')
 
@@ -205,6 +219,18 @@ function MarkerCard({
 
   const accent =
     status === 'done' ? 'border-success/40' : status === 'not_done' ? 'border-danger/40' : 'border-border'
+
+  const subtaskDoneCount = task.subtasks.filter((s) => subtaskMarks[s.id] === 'done').length
+  const subtaskTotal = task.subtasks.length
+
+  async function toggleSubtaskMark(subtaskId: string, current: string) {
+    const next = current === 'done' ? 'pending' : 'done'
+    try {
+      await toggleSubtask.mutateAsync({ subtaskId, dueDate, status: next })
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
 
   async function markDone() {
     try {
@@ -258,14 +284,43 @@ function MarkerCard({
           </div>
 
           {task.subtasks.length > 0 && (
-            <ul className="mb-3 space-y-1.5 rounded-xl bg-muted/50 p-3">
-              {task.subtasks.map((s) => (
-                <li key={s.id} className="flex items-center gap-2.5 text-sm">
-                  <Checkbox checked disabled className="opacity-60" />
-                  <span className="text-text-soft">{s.title}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="mb-3 rounded-xl bg-muted/50 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">Subtasks</span>
+                <span className="tnum text-[11px] font-medium text-text-soft">{subtaskDoneCount}/{subtaskTotal} done</span>
+              </div>
+              <div className="mb-2 h-1 overflow-hidden rounded-full bg-background">
+                <div
+                  className="h-full rounded-full bg-success transition-all"
+                  style={{ width: `${subtaskTotal ? (subtaskDoneCount / subtaskTotal) * 100 : 0}%` }}
+                />
+              </div>
+              <ul className="space-y-1">
+                {task.subtasks.map((s) => {
+                  const checked = subtaskMarks[s.id] === 'done'
+                  return (
+                    <li key={s.id}>
+                      <button
+                        onClick={() => toggleSubtaskMark(s.id, checked ? 'done' : 'pending')}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left text-sm transition hover:bg-background/50"
+                      >
+                        <span
+                          className={cn(
+                            'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
+                            checked ? 'border-success bg-success text-white' : 'border-border',
+                          )}
+                        >
+                          {checked && <Check className="animate-pop h-3 w-3" strokeWidth={3} />}
+                        </span>
+                        <span className={cn('flex-1', checked ? 'text-text-muted line-through' : 'text-text-soft')}>
+                          {s.title}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
           )}
 
           {mark?.autoMarked && (

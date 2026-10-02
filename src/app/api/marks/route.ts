@@ -53,10 +53,12 @@ export async function POST(req: NextRequest) {
 }
 
 // Helper exported for reuse: ensure marks exist + apply auto not-done rule
-// for every occurrence of the user's tasks in [from, to]. Returns nothing;
-// callers then read the marks fresh.
+// for every occurrence of the user's tasks in [from, to]. Also ensures a
+// SubtaskMark row exists for every subtask on each occurrence date so the
+// UI can render each subtask's individual state. Returns nothing; callers
+// then read the marks fresh.
 export async function ensureMarksAndAutoClose(userId: string, from: string, to: string) {
-  const tasks = await db.task.findMany({ where: { userId } })
+  const tasks = await db.task.findMany({ where: { userId }, include: { subtasks: true } })
   const today = todayDateOnly()
   const fromD = parseDateOnly(from)
   const toD = parseDateOnly(to)
@@ -73,7 +75,7 @@ export async function ensureMarksAndAutoClose(userId: string, from: string, to: 
       }
     }
     for (const d of dates) {
-      const due = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const due = dateOnly(d)
       let mark = await db.taskMark.findUnique({ where: { taskId_dueDate: { taskId: t.id, dueDate: due } } })
       if (!mark) {
         mark = await db.taskMark.create({
@@ -92,7 +94,22 @@ export async function ensureMarksAndAutoClose(userId: string, from: string, to: 
           },
         })
       }
+      // Ensure each subtask has a mark row for this date (pending by default).
+      for (const s of t.subtasks) {
+        const existing = await db.subtaskMark.findUnique({
+          where: { subtaskId_dueDate: { subtaskId: s.id, dueDate: due } },
+        })
+        if (!existing) {
+          await db.subtaskMark.create({
+            data: { subtaskId: s.id, userId, dueDate: due, status: 'pending' },
+          })
+        }
+      }
     }
   }
   void today
+}
+
+function dateOnly(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

@@ -71,6 +71,13 @@ export const marks = {
     req<TaskMark>(`/api/marks?taskId=${taskId}&date=${dueDate}`, { method: 'POST', body: JSON.stringify(body) }),
 }
 
+// ---------- Subtask marks ----------
+export type SubtaskMarkInput = { status: 'done' | 'pending' }
+export const subtaskMarks = {
+  set: (subtaskId: string, dueDate: string, body: SubtaskMarkInput) =>
+    req<import('@/lib/types').SubtaskMark>(`/api/subtask-marks?subtaskId=${subtaskId}&date=${dueDate}`, { method: 'POST', body: JSON.stringify(body) }),
+}
+
 // ---------- Stats ----------
 export const stats = {
   overview: (params: { from: string; to: string }) => {
@@ -79,4 +86,4 @@ export const stats = {
   },
 }
 
-export const api = { auth, categories, tasks, marks, stats }
+export const api = { auth, categories, tasks, marks, subtaskMarks, stats }

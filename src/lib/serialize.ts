@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import type { Category, Subtask, Task, TaskMark } from '@/lib/types'
+import type { Category, Subtask, SubtaskMark, Task, TaskMark } from '@/lib/types'
 
 export function serializeCategory(c: any): Category {
   return {
@@ -46,6 +46,16 @@ export function serializeMark(m: any): TaskMark {
     status: m.status,
     reason: m.reason,
     autoMarked: m.autoMarked,
+    markedAt: m.markedAt ? m.markedAt.toISOString() : null,
+  }
+}
+
+export function serializeSubtaskMark(m: any): SubtaskMark {
+  return {
+    id: m.id,
+    subtaskId: m.subtaskId,
+    dueDate: m.dueDate,
+    status: m.status,
     markedAt: m.markedAt ? m.markedAt.toISOString() : null,
   }
 }

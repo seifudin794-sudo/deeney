@@ -125,6 +125,42 @@ export function useSetMark() {
   })
 }
 
+// ---- Subtask marks ----
+export function useToggleSubtaskMark() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ subtaskId, dueDate, status }: { subtaskId: string; dueDate: string; status: 'done' | 'pending' }) =>
+      api.subtaskMarks.set(subtaskId, dueDate, { status }),
+    // Optimistically update the stats cache so the checkbox feels instant.
+    onMutate: async ({ subtaskId, dueDate, status }) => {
+      const keys = qc.getQueriesData({ queryKey: ['stats'] }) as [unknown, any][]
+      for (const [key, value] of keys) {
+        if (!value?.marks) continue
+        const next = {
+          ...value,
+          marks: value.marks.map((m: any) =>
+            m.dueDate === dueDate && value.taskProgress?.some((tp: any) => tp.days?.some((d: any) => d.subtasks?.[subtaskId] !== undefined && d.date === dueDate))
+              ? { ...m, subtasks: { ...(m.subtasks || {}), [subtaskId]: status } }
+              : m,
+          ),
+          taskProgress: (value.taskProgress || []).map((tp: any) => ({
+            ...tp,
+            days: (tp.days || []).map((d: any) =>
+              d.subtasks && subtaskId in d.subtasks
+                ? { ...d, subtasks: { ...d.subtasks, [subtaskId]: status } }
+                : d,
+            ),
+          })),
+        }
+        qc.setQueryData(key, next)
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
+}
+
 // ---- Stats ----
 export function useStats(params: { from: string; to: string }) {
   return useQuery({ queryKey: qk.stats(params), queryFn: () => api.stats.overview(params) })

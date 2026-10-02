@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     const fromD = parseDateOnly(from)
     const toD = parseDateOnly(to)
 
-    type DayDot = { date: string; status: string; auto: boolean; reason: string | null }
+    type DayDot = { date: string; status: string; auto: boolean; reason: string | null; subtasks: Record<string, string> }
     type TaskProgress = {
       task: (typeof tasks)[number]
       days: DayDot[]
@@ -66,11 +66,26 @@ export async function GET(req: NextRequest) {
       })
       const markByDate = new Map(marks.map((m) => [m.dueDate, m]))
 
+      // Subtask marks for this task in the range.
+      const subtaskIds = t.subtasks.map((s) => s.id)
+      const subtaskMarks = subtaskIds.length
+        ? await db.subtaskMark.findMany({
+            where: { subtaskId: { in: subtaskIds }, dueDate: { gte: from, lte: to } },
+          })
+        : []
+      // Map: dueDate -> { subtaskId -> status }
+      const subtaskByDate = new Map<string, Record<string, string>>()
+      for (const sm of subtaskMarks) {
+        if (!subtaskByDate.has(sm.dueDate)) subtaskByDate.set(sm.dueDate, {})
+        subtaskByDate.get(sm.dueDate)![sm.subtaskId] = sm.status
+      }
+
       const days: DayDot[] = dates.map((d) => {
         const due = dateOnlyStr(d)
         const m = markByDate.get(due)
         const status = m?.status || 'pending'
-        return { date: due, status, auto: m?.autoMarked ?? false, reason: m?.reason ?? null }
+        const subtaskStates = subtaskByDate.get(due) || {}
+        return { date: due, status, auto: m?.autoMarked ?? false, reason: m?.reason ?? null, subtasks: subtaskStates }
       })
 
       const doneCount = days.filter((d) => d.status === 'done').length
@@ -134,11 +149,12 @@ export async function GET(req: NextRequest) {
         todayStatus: tp.todayStatus,
         days: tp.days,
         subtaskCount: tp.task.subtasks.length,
+        subtasks: tp.task.subtasks.map((s) => ({ id: s.id, title: s.title, sortOrder: s.sortOrder })).sort((a, b) => a.sortOrder - b.sortOrder),
       })),
       recentNotDone: recentNotDone.slice(0, 8),
       // History for a single task (used by the side panel). We return all tasks' marks here; the client fetches a focused task's history via this same endpoint + filter client-side — but for efficiency we also expose a per-task marks list.
       marks: taskProgress.flatMap((tp) =>
-        tp.days.map((d) => ({ taskId: tp.task.id, dueDate: d.date, status: d.status, auto: d.auto, reason: d.reason })),
+        tp.days.map((d) => ({ taskId: tp.task.id, dueDate: d.date, status: d.status, auto: d.auto, reason: d.reason, subtasks: d.subtasks })),
       ),
     })
   } catch (e) {
