@@ -52,3 +52,7 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# database files (local SQLite — never commit the binary)
+db/*.db
+db/*.db-journal
