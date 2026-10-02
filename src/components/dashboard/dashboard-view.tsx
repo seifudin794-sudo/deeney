@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { CheckCircle2, Clock, XCircle, X, Loader2, CalendarDays } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { CheckCircle2, Clock, XCircle, X, Loader2, CalendarDays, LineChart as LineChartIcon, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -21,9 +21,20 @@ import {
   addDays,
   formatDateShort,
   formatDateMed,
+  occursOn,
 } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Priority, RepeatType } from '@/lib/types'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RTooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts'
 
 type RangeKey = 'today' | 'week' | 'month' | 'custom'
 
@@ -204,6 +215,9 @@ export function DashboardView() {
           </div>
         </>
       ) : null}
+
+      {/* progress graph — independent date + task filters */}
+      <ProgressGraph />
 
       {/* history side panel */}
       <HistorySheet taskId={historyTaskId} onOpenChange={(o) => !o && setHistoryTaskId(null)} />
@@ -391,5 +405,271 @@ function HistorySheet({ taskId, onOpenChange }: { taskId: string | null; onOpenC
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+// ── Progress Graph ──────────────────────────────────────────────
+// Independent section with its own date range + task multi-select.
+// Shows a line chart of daily completion % for each selected MAIN task
+// (subtasks are excluded — only top-level tasks appear in the picker).
+const CHART_COLORS = [
+  'var(--primary)', 'var(--success)', 'var(--warning)', 'var(--danger)',
+  '#8b5cf6', '#0ea5e9', '#f97316', '#14b8a6',
+]
+
+function ProgressGraph() {
+  const { data: tasks } = useTasks()
+  const [graphFrom, setGraphFrom] = useState<string>(() => {
+    const d = addDays(new Date(), -13)
+    return toDateOnly(d)
+  })
+  const [graphTo, setGraphTo] = useState<string>(todayDateOnly())
+  const [calOpen, setCalOpen] = useState(false)
+  const [taskMenuOpen, setTaskMenuOpen] = useState(false)
+  // selected task ids — default to all main tasks (auto-selected on first load)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  // Fetch stats for the graph's own date range.
+  const { data, isLoading } = useStats({ from: graphFrom, to: graphTo })
+
+  // Auto-select all main tasks on first load (once).
+  const [didInit, setDidInit] = useState(false)
+  useEffect(() => {
+    if (!didInit && tasks && tasks.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedIds(tasks.map((t) => t.id))
+      setDidInit(true)
+    }
+  }, [didInit, tasks])
+
+  const mainTasks = tasks || []
+
+  // Build chart data: one row per date in range, one key per selected task.
+  const chartData = useMemo(() => {
+    if (!data) return []
+    const rows: Record<string, any>[] = []
+    const fromD = parseDateOnly(graphFrom)
+    const toD = parseDateOnly(graphTo)
+    const cursor = new Date(fromD)
+    cursor.setHours(0, 0, 0, 0)
+    while (cursor <= toD) {
+      const dateStr = toDateOnly(cursor)
+      const row: Record<string, any> = { date: dateStr }
+      for (const tp of data.taskProgress) {
+        if (!selectedIds.includes(tp.taskId)) continue
+        const day = tp.days.find((d: any) => d.date === dateStr)
+        if (!day) continue
+        // For tasks with subtasks: completion = done subtasks / total subtasks.
+        // For tasks without subtasks: 100 if done, 0 if not_done/pending.
+        let pct: number
+        if (tp.hasSubtasks) {
+          const subs = Object.values(day.subtasks || {})
+          const done = subs.filter((v: string) => v === 'done').length
+          pct = subs.length ? Math.round((done / subs.length) * 100) : 0
+        } else {
+          pct = day.status === 'done' ? 100 : 0
+        }
+        row[tp.taskName] = pct
+      }
+      rows.push(row)
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return rows
+  }, [data, graphFrom, graphTo, selectedIds])
+
+  const selectedNames = useMemo(() => {
+    return mainTasks.filter((t) => selectedIds.includes(t.id)).map((t) => t.name)
+  }, [mainTasks, selectedIds])
+
+  function toggleTask(id: string) {
+    setSelectedIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  }
+
+  function setQuickRange(days: number) {
+    setGraphFrom(toDateOnly(addDays(new Date(), -(days - 1))))
+    setGraphTo(todayDateOnly())
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <LineChartIcon className="h-5 w-5 text-primary" />
+          <h2 className="text-sm font-semibold text-text">Progress over time</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* quick range chips */}
+          <div className="flex rounded-lg border border-border p-0.5">
+            {[
+              { label: '7d', days: 7 },
+              { label: '14d', days: 14 },
+              { label: '30d', days: 30 },
+            ].map((q) => (
+              <button
+                key={q.label}
+                onClick={() => setQuickRange(q.days)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-[11px] font-medium transition',
+                  graphFrom === toDateOnly(addDays(new Date(), -(q.days - 1))) && graphTo === todayDateOnly()
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-text-muted hover:text-text',
+                )}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          {/* date range picker */}
+          <Popover open={calOpen} onOpenChange={setCalOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                <span className="tnum">{formatDateShort(graphFrom)}–{formatDateShort(graphTo)}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="range"
+                selected={{ from: parseDateOnly(graphFrom), to: parseDateOnly(graphTo) }}
+                onSelect={(r) => {
+                  if (r?.from) setGraphFrom(toDateOnly(r.from))
+                  if (r?.to) {
+                    setGraphTo(toDateOnly(r.to))
+                    setCalOpen(false)
+                  }
+                }}
+                numberOfMonths={2}
+                weekStartsOn={1}
+              />
+            </PopoverContent>
+          </Popover>
+          {/* task multi-select */}
+          <Popover open={taskMenuOpen} onOpenChange={setTaskMenuOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Filter className="h-3.5 w-3.5" />
+                Tasks
+                {selectedIds.length > 0 && (
+                  <span className="rounded-full bg-primary/10 px-1.5 text-[10px] text-primary">{selectedIds.length}</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64" align="end">
+              <div className="mb-2 flex items-center justify-between border-b border-border pb-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">Filter tasks</span>
+                <button
+                  onClick={() => setSelectedIds(mainTasks.map((t) => t.id))}
+                  className="text-[11px] text-primary hover:underline"
+                >
+                  All
+                </button>
+              </div>
+              <div className="max-h-64 space-y-1 overflow-y-auto">
+                {mainTasks.length === 0 && (
+                  <p className="py-4 text-center text-xs text-text-muted">No tasks yet.</p>
+                )}
+                {mainTasks.map((t) => {
+                  const active = selectedIds.includes(t.id)
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => toggleTask(t.id)}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition',
+                        active ? 'bg-primary/5 text-text' : 'text-text-muted hover:bg-muted',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition',
+                          active ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                        )}
+                      >
+                        {active && <span className="text-[10px]">✓</span>}
+                      </span>
+                      {t.category && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: t.category.color }} />}
+                      <span className="truncate">{t.name}</span>
+                      {t.subtasks.length > 0 && (
+                        <span className="ml-auto text-[10px] text-text-muted">{t.subtasks.length} sub</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="h-72 animate-pulse rounded-xl bg-muted" />
+      ) : mainTasks.length === 0 ? (
+        <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border text-sm text-text-muted">
+          No tasks to graph. Add a task first.
+        </div>
+      ) : selectedIds.length === 0 ? (
+        <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border text-sm text-text-muted">
+          Select at least one task to see its progress.
+        </div>
+      ) : chartData.length === 0 ? (
+        <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border text-sm text-text-muted">
+          No occurrences in this range.
+        </div>
+      ) : (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: -16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                tickFormatter={(v) => {
+                  const d = parseDateOnly(v)
+                  return `${d.getDate()}/${d.getMonth() + 1}`
+                }}
+                interval="preserveStartEnd"
+              />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} unit="%" />
+              <RTooltip content={<GraphTip />} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {selectedNames.map((name, i) => (
+                <Line
+                  key={name}
+                  type="monotone"
+                  dataKey={name}
+                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  activeDot={{ r: 4 }}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+          <p className="mt-2 text-center text-[11px] text-text-muted">
+            Each line shows the daily completion % of a task. 100% = fully done that day.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function GraphTip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const d = parseDateOnly(label)
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="mb-1.5 font-semibold text-text">{d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+      <div className="space-y-0.5">
+        {payload.map((p: any) => (
+          <div key={p.dataKey} className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+            <span className="text-text-soft">{p.dataKey}</span>
+            <span className="ml-auto font-medium text-text tnum">{p.value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
